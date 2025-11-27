@@ -1,9 +1,9 @@
-name: Build and Release
+name: Windows Build and Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  push:          # اجرا با هر push
+    branches:
+      - '**'
   workflow_dispatch:
     inputs:
       tag:
@@ -14,9 +14,6 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        architecture: [x64]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,12 +26,11 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Build Windows (${{ matrix.architecture }})
+      - name: Build Windows
         run: flutter build windows --release
 
       - name: Install Inno Setup
-        run: |
-          choco install innosetup -y
+        run: choco install innosetup -y
         shell: cmd
 
       - name: Create Windows installer
@@ -43,271 +39,37 @@ jobs:
           ISCC.exe vispar.iss
         shell: cmd
 
-      - name: Package Windows build
+      - name: Package Windows installer
         run: |
-          mkdir -p release
+          mkdir release
           copy windows\installer\vispar_gui-setup.exe release\
         shell: cmd
 
       - name: Create Windows Portable ZIP
         run: |
-          mkdir -p release\portable
-          xcopy build\windows\${{ matrix.architecture }}\runner\Release\* release\portable\ /E /I
+          mkdir release\portable
+          xcopy build\windows\x64\runner\Release\* release\portable\ /E /I
           cd release
-          7z a -tzip vispar-windows-${{ matrix.architecture }}-portable.zip portable\
+          7z a -tzip vispar-windows-x64-portable.zip portable\
         shell: cmd
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build-${{ matrix.architecture }}
-          path: |
-            release/vispar_gui-setup.exe
-            release/vispar-windows-${{ matrix.architecture }}-portable.zip
-
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Enable macOS desktop support
-        run: flutter config --enable-macos-desktop
-
-      - name: Build macOS
-        run: flutter build macos --release --no-tree-shake-icons
-
-      - name: Create Universal Binary
-        run: |
-          # Create a universal binary that works on both Intel and Apple Silicon
-          mkdir -p release
-          
-          # The built app is already a universal binary by default
-          # Copy the app bundle to a temporary location
-          TEMP_DIR=$(mktemp -d)
-          cp -R build/macos/Build/Products/Release/vispar_gui.app "$TEMP_DIR/"
-          
-          # Create the DMG using create-dmg tool
-          brew install create-dmg
-          
-          create-dmg \
-            --volname "vispar Installer" \
-            --window-pos 200 120 \
-            --window-size 800 400 \
-            --icon-size 100 \
-            --app-drop-link 600 185 \
-            "release/vispar-macos-universal.dmg" \
-            "$TEMP_DIR/"
-          
-          # Clean up
-          rm -rf "$TEMP_DIR"
-
-      - name: Create ZIP
-        run: |
-          # Create a ZIP archive of the app bundle
-          mkdir -p release
-          zip -r release/vispar-macos-universal.zip build/macos/Build/Products/Release/vispar_gui.app
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-build
-          path: |
-            release/vispar-macos-universal.dmg
-            release/vispar-macos-universal.zip
-
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev desktop-file-utils libgdk-pixbuf2.0-dev
-        shell: bash
-
-      - name: Build Linux
-        run: flutter build linux --release
-
-      - name: Install packaging tools
-        run: |
-          sudo apt-get install -y rpm ruby ruby-dev rubygems build-essential
-          sudo gem install fpm
-        shell: bash
-
-      - name: Create DEB and RPM packages
-        run: |
-          # Create directory structure for packaging
-          mkdir -p vispar-package/usr/bin
-          mkdir -p vispar-package/usr/lib
-          mkdir -p vispar-package/usr/share/applications
-          mkdir -p vispar-package/usr/share/icons/hicolor/16x16/apps
-          mkdir -p vispar-package/usr/share/icons/hicolor/22x22/apps
-          mkdir -p vispar-package/usr/share/icons/hicolor/24x24/apps
-          mkdir -p vispar-package/usr/share/icons/hicolor/32x32/apps
-          mkdir -p vispar-package/usr/share/icons/hicolor/48x48/apps
-          mkdir -p vispar-package/usr/share/icons/hicolor/64x64/apps
-          mkdir -p vispar-package/usr/share/icons/hicolor/128x128/apps
-          mkdir -p vispar-package/usr/share/icons/hicolor/256x256/apps
-          mkdir -p vispar-package/usr/share/icons/hicolor/512x512/apps
-          
-          # Copy application files
-          cp -r build/linux/x64/release/bundle/* vispar-package/usr/bin/
-          
-          # Copy desktop file
-          cp linux/runner/vispar.desktop vispar-package/usr/share/applications/
-          
-          # Copy icons
-          cp linux/assets/16x16.png vispar-package/usr/share/icons/hicolor/16x16/apps/vispar.png
-          cp linux/assets/22x22.png vispar-package/usr/share/icons/hicolor/22x22/apps/vispar.png
-          cp linux/assets/24x24.png vispar-package/usr/share/icons/hicolor/24x24/apps/vispar.png
-          cp linux/assets/32x32.png vispar-package/usr/share/icons/hicolor/32x32/apps/vispar.png
-          cp linux/assets/48x48.png vispar-package/usr/share/icons/hicolor/48x48/apps/vispar.png
-          cp linux/assets/64x64.png vispar-package/usr/share/icons/hicolor/64x64/apps/vispar.png
-          cp linux/assets/128x128.png vispar-package/usr/share/icons/hicolor/128x128/apps/vispar.png
-          cp linux/assets/256x256.png vispar-package/usr/share/icons/hicolor/256x256/apps/vispar.png
-          cp linux/assets/512x512.png vispar-package/usr/share/icons/hicolor/512x512/apps/vispar.png
-          
-          # Ensure release directory exists
-          mkdir -p release
-          
-          # Get version from pubspec.yaml
-          VERSION=$(grep '^version:' pubspec.yaml | cut -d ':' -f 2 | tr -d ' ')
-          
-          # Create DEB package
-          fpm -s dir -t deb \
-            -n vispar \
-            -v $VERSION \
-            --description "vispar Application" \
-            --url "https://github.com/tsshack/vispar-GUI" \
-            --maintainer "ehsan Fazli" \
-            --vendor "vispar" \
-            --license "MIT" \
-            --category "Utility" \
-            --depends "libgtk-3-0" \
-            --depends "liblzma5" \
-            -C vispar-package \
-            --package release/vispar.deb \
-            .
-          
-          # Create RPM package
-          fpm -s dir -t rpm \
-            -n vispar \
-            -v $VERSION \
-            --description "vispar" \
-            --url "https://github.com/tsshack/vispar-GUI" \
-            --maintainer "ehsan Fazli" \
-            --vendor "vispar" \
-            --license "MIT" \
-            --category "Applications/Utilities" \
-            --depends "gtk3" \
-            --depends "xz-libs" \
-            -C vispar-package \
-            --package release/vispar.rpm \
-            .
-        shell: bash
-
-      - name: Create Linux AppImage (Optional)
-        run: |
-          # Ensure release directory exists
-          mkdir -p release
-          
-          # Get version from pubspec.yaml
-          VERSION=$(grep '^version:' pubspec.yaml | cut -d ':' -f 2 | tr -d ' ')
-          echo "Building AppImage for version: $VERSION"
-          
-          # Download linuxdeploy tool
-          echo "Downloading linuxdeploy..."
-          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage
-          
-          # Create AppDir structure
-          echo "Creating AppDir structure..."
-          mkdir -p vispar_gui.AppDir/usr/bin
-          cp -r build/linux/x64/release/bundle/* vispar_gui.AppDir/usr/bin/
-          
-          # Copy desktop file to AppDir
-          echo "Copying desktop file..."
-          cp linux/runner/vispar.desktop vispar_gui.AppDir/vispar_gui.desktop
-          
-          # Copy icon to AppDir root with correct name
-          echo "Copying icon..."
-          cp linux/assets/256x256.png vispar_gui.AppDir/vispar_gui.png
-          
-          # Make sure the executable is properly linked
-          chmod +x vispar_gui.AppDir/usr/bin/vispar_gui
-          
-          # List files for debugging
-          echo "AppDir contents:"
-          find vispar_gui.AppDir -type f
-          
-          # Create AppImage
-          echo "Creating AppImage..."
-          OUTPUT=release/vispar-$VERSION-linux.AppImage ./linuxdeploy-x86_64.AppImage \
-            --appdir vispar_gui.AppDir \
-            --output appimage || {
-            echo "AppImage creation failed, continuing with other packages"
-            echo "Contents of release directory:"
-            ls -la release/ || echo "Release directory not found or empty"
-          }
-        shell: bash
-
-      - name: Package Linux build
-        run: |
-          mkdir -p release
-          # Create tar.gz archive of the Linux build
-          tar -czf release/vispar-linux.tar.gz -C build/linux/x64/release bundle/
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-build
-          path: |
-            release/vispar-linux.tar.gz
-            release/vispar-*-linux.AppImage
-            release/vispar.deb
-            release/vispar.rpm
-
+          name: windows-build
+          path: release/
 
   release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: build-windows
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download Windows artifacts (x64)
+      - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: windows-build-x64
-
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-build
-
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-build
+          name: windows-build
 
       - name: Get tag name
         id: get_tag
@@ -317,13 +79,9 @@ jobs:
           else
             echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
           fi
-          # Extract version from pubspec.yaml
-          VERSION=$(grep '^version:' pubspec.yaml | cut -d ':' -f 2 | tr -d ' ')
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
         shell: bash
 
       - name: Create Release
-        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
@@ -333,31 +91,11 @@ jobs:
           files: |
             vispar_gui-setup.exe
             vispar-windows-x64-portable.zip
-            vispar-macos-universal.dmg
-            vispar-macos-universal.zip
-            vispar-linux.tar.gz
-            vispar-*-linux.AppImage
-            vispar.deb
-            vispar.rpm
           body: |
             ## vispar Release ${{ env.TAG_NAME }}
-            
-            ### Important Note for Windows Users
-            
-            If you encounter any errors when installing or running vispar on Windows, please install the Microsoft Visual C++ Redistributable 2015-2022 and then try installing or running vispar again.
-            
-            You can download it from the official Microsoft website: [Microsoft Visual C++ Redistributable](https://docs.microsoft.com/en-US/cpp/windows/latest-supported-vc-redist)
-            
-            ### Download
-            
-            | Platform | Architecture | Download |
-            |----------|-------------|----------|
-            | Windows  | x64 (Installer) | <a href="https://github.com/tsshack/vispar-GUI/releases/download/${{ env.TAG_NAME }}/vispar_gui-setup.exe"><img src="https://img.shields.io/badge/Windows-Installer-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows Installer"></a> |
-            | Windows  | x64 (Portable ZIP) | <a href="https://github.com/tsshack/vispar-GUI/releases/download/${{ env.TAG_NAME }}/vispar-windows-x64-portable.zip"><img src="https://img.shields.io/badge/Windows-x64--Portable--ZIP-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64 Portable ZIP"></a> |
-            | macOS    | Universal (.dmg) | <a href="https://github.com/tsshack/vispar-GUI/releases/download/${{ env.TAG_NAME }}/vispar-macos-universal.dmg"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Universal DMG"></a> |
-            | macOS    | Universal (.zip) | <a href="https://github.com/tsshack/vispar-GUI/releases/download/${{ env.TAG_NAME }}/vispar-macos-universal.zip"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Universal ZIP"></a> |
-            | Linux    | x64 (tar.gz) | <a href="https://github.com/tsshack/vispar-GUI/releases/download/${{ env.TAG_NAME }}/vispar-linux.tar.gz"><img src="https://img.shields.io/badge/Linux-tar.gz-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux tar.gz"></a> |
-            | Linux    | x64 (AppImage) | <a href="https://github.com/tsshack/vispar-GUI/releases/download/${{ env.TAG_NAME }}/vispar-${{ env.VERSION }}-linux.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux AppImage"></a> |
-            | Linux    | x64 (.deb) | <a href="https://github.com/tsshack/vispar-GUI/releases/download/${{ env.TAG_NAME }}/vispar.deb"><img src="https://img.shields.io/badge/Linux-.deb-FCC624?style=for-the-badge&logo=debian&logoColor=white" alt="Linux .deb"></a> |
-            | Linux    | x64 (.rpm) | <a href="https://github.com/tsshack/vispar-GUI/releases/download/${{ env.TAG_NAME }}/vispar.rpm"><img src="https://img.shields.io/badge/Linux-.rpm-FCC624?style=for-the-badge&logo=redhat&logoColor=white" alt="Linux .rpm"></a> |
-            | Android  | Universal APK | <a href="https://github.com/tsshack/vispar/releases/latest/download/vispar-universal.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android Universal APK"></a> |
+
+            ### Windows Downloads
+            - **Installer:** vispar_gui-setup.exe  
+            - **Portable ZIP:** vispar-windows-x64-portable.zip
+
+            If you get errors running the app, install **Microsoft Visual C++ Redistributable 2015–2022**.
